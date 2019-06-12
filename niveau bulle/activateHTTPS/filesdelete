@@ -1,0 +1,87 @@
+#!/bin/bash
+
+
+# PARAMS
+#PARAM1="/dir/subdir";
+
+# OPTS
+dOpt=0;
+sOpt=0;
+vOpt=0;
+ROpt=0;
+while getopts ':dsvR' opt; do
+  case "$opt" in
+		d) dOpt=1 ;;
+		s) sOpt=1 ;;
+		v) vOpt=1 ;;
+    R) ROpt=1 ;;
+    :) echo "Missing argument for option -$OPTARG" ;;
+    \?) echo "Unexpected option -$OPTARG" ;;
+  esac
+done
+shift $((OPTIND-1))
+
+# ARGS
+FILES=$1;
+
+# Recursive deletion
+if (( ROpt == 1 )); then
+  FILES=$(find ./ -name "$FILES");
+fi
+
+# Sudo
+SUDO="";
+if (( $sOpt == 1 )); then
+	SUDO="sudo";
+fi
+
+
+
+
+
+# Check script args
+if (( $# == 0 )); then
+	# Msg
+	echo "--------------------------------------------------";
+	echo "";
+	echo "USAGE     : filesdelete <files>";
+	#echo "NOTE      : arg2 is mandatory";
+	echo "OPTIONS   : ";
+	echo "            -R           : recursive";
+	echo "            -s           : sudo";
+	echo "            -d           : dirs instead of files";
+	echo "            -v           : verbose (Perform simulation. Do not delete files)";
+	#echo "            -o <val>     : option";
+	echo "EXAMPLE   : filesdelete toto.txt";
+	echo "EXAMPLE   : filesdelete '*.txt'";
+	echo "EXAMPLE   : filesdelete -v '*.txt'";
+	echo "EXAMPLE   : filesdelete -R '*.txt'";
+	echo "";
+	echo "--------------------------------------------------";
+	exit;
+elif (( $# == 1 )); then
+	# Delete files
+	IFSOld=$IFS;
+	IFS=$'\n';
+	for f in $FILES; do
+		# Test simulation vs deletion
+		if (( vOpt == 1 )); then
+			# Simulation
+			echo -e "\t[INFO] Candidate for deletion : $f";
+		else
+			# Test file vs dir
+			if [ -f "$f" ] && (( $dOpt == 0 )); then
+				# File deletion
+				$SUDO rm -f "$f";
+			elif [ -d "$f" ] && (( $dOpt == 1 )); then
+				# Dir deletion
+				$SUDO rm -Rf "$f";
+			fi
+		fi
+	done
+	IFS=$IFSOld;
+else
+  echo -e "[WARN] Commands such as   > filesdelete *.txt   must be replaced by   > filesdelete '*.txt'"
+fi
+
+# Cleaning

@@ -1,0 +1,105 @@
+#!/bin/bash
+
+
+# PARAMS
+
+# OPTS
+bOpt=0;
+lOpt=0;
+pOpt=0;
+sOpt=0;
+tOpt=0;
+vOpt=0;
+while getopts ':blpstv' opt; do
+  case "$opt" in
+    b) bOpt=1 ;;
+    l) lOpt=1 ;;
+    p) pOpt=1 ;;
+    s) sOpt=1 ;;
+    t) tOpt=1 ;;
+    v) vOpt=1 ;;
+    :) echo "Missing argument for option -$OPTARG" ;;
+    \?) echo "Unexpected option -$OPTARG" ;;
+  esac
+done
+shift $((OPTIND-1))
+
+# ARGS
+FILES=$1;
+SEARCH=$2;
+REPLACE=$3;
+
+# Sudo
+SUDO="";
+SUDO2="";
+if (( $sOpt == 1 )); then
+	SUDO="-s";
+	SUDO2="sudo";
+fi
+
+
+
+# Check script args
+if (( $# == 0 )); then
+  # Msg
+  echo "--------------------------------------------------";
+  echo "";
+  echo "USAGE     : infilesreplace <files> <search> <replace>";
+  echo "NOTE      : Captured expressions in <search> using (...) can be used in <replace> using \\1, \\2";
+  echo "OPTIONS   : ";
+	echo "            -l           : line (replace whole line)";
+	echo "            -p           : paths (allow '/' in both <search> and <replace>) ('@' are forbidden)"
+	echo "";
+	echo "            -s           : sudo";
+  echo "            -t           : temporary file (preserve original file)";
+	echo "            -b           : backup (keep backup of original file)"
+  echo "            -v           : verbose (terminal display)";
+	echo "";
+  echo "EXAMPLE   : infilesreplace '*.txt' '#name#' 'Bob'";
+  echo "EXAMPLE   : infilesreplace '*.txt' '^(.*);(.*);(.*)$' 'xxxxx;\2;xxxxx'";
+  echo "EXAMPLE   : infilesreplace -l '*.txt' 'KEY=.*' 'KEY=VAL\n'              Replace KEY=??? with KEY=VAL";
+  echo "EXAMPLE   : infilesreplace -l '*.txt' 'KEY=.*' ''                       Delete line KEY=???";
+	echo "EXAMPLE   : infilesreplace -p '*.txt' '/home/bob/' '/home/tim/'         Replace for paths";
+  echo "";
+  echo "--------------------------------------------------";
+  exit;
+elif (( $# == 3 )); then
+	OLDIFS=$IFS;
+	IFS=$(echo -en "\\n\\b");
+	for f in $FILES; do
+		# Replaced file
+		REPLACEDFILE="$f.rpl";
+
+		# Backup
+		if (( $bOpt == 1 )); then
+			./filesbackup -p $SUDO "$f";
+		fi
+
+		# Line
+		if (( $lOpt == 1 )); then
+			SEARCH="^$SEARCH\\n$";
+		fi
+
+	  # Test verbose vs real replace
+	  if (( $vOpt == 1 )); then
+	     $SUDO2 cat "$f" | perl -pe "s/$SEARCH/$REPLACE/g";
+		else
+			# Create temporary file
+			./filesrename -c $SUDO "$f" "$REPLACEDFILE";
+
+			# Replace in temporary file
+			# Test path
+			if (( $pOpt == 1 )); then
+				$SUDO2 cat "$f" | sed -re "s@$SEARCH@$REPLACE@g" | $SUDO2 tee "$REPLACEDFILE" &> /dev/null;
+			else
+				$SUDO2 cat "$f" | perl -pe "s/$SEARCH/$REPLACE/g" | $SUDO2 tee "$REPLACEDFILE" &> /dev/null;
+			fi
+
+			# Override original file
+			if (( $tOpt == 0 )); then
+				./filesrename $SUDO "$REPLACEDFILE" "$f";
+			fi
+	  fi
+	done
+	IFS=$OLDIFS;
+fi

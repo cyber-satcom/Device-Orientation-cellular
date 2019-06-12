@@ -1,0 +1,150 @@
+#!/bin/bash
+
+
+# OPTS
+cOpt=0;
+sOpt=0;
+vOpt=0;
+CArg='';
+DArg='';
+ROpt=0;
+while getopts ':csvC:D:R' opt; do
+  case "$opt" in
+    c) cOpt=1 ;;
+    s) sOpt=1 ;;
+    v) vOpt=1 ;;
+    C) CArg="$OPTARG" ;;
+    D) DArg="$OPTARG" ;;
+    R) ROpt=1 ;;
+    :) echo "Missing argument for option -$OPTARG" ;;
+    \?) echo "Unexpected option -$OPTARG" ;;
+  esac
+done
+shift $((OPTIND-1))
+
+# ARGS
+FILES=$1;
+NEWFILE=$2;
+
+# Recursive
+if (( $ROpt == 1 )); then
+  FILES=$(find ./ -name "$FILES");
+fi
+
+# Init counter with user value
+COUNTER=0;
+if [[ $CArg != "" ]]; then
+  COUNTER="$CArg";
+fi
+
+# Sudo
+SUDO="";
+if (( $sOpt == 1 )); then
+	SUDO="sudo";
+fi
+
+
+
+# Check script args
+if (( $# == 0 )); then
+  # Msg
+  echo "--------------------------------------------------";
+  echo "";
+  echo "USAGE     : filesrename <files> <newFile>";
+	echo "NOTE      : use original filename or extension if omitted"
+  echo "NOTE      : in newFile string '#P#' stands for current path";
+  echo "NOTE      : in newFile string '#D#' stands for current dir (. used for files in ./)";
+  echo "NOTE      : in newFile string '#F#' stands for current filename";
+  echo "NOTE      : in newFile string '#E#' stands for current extension";
+  echo "OPTIONS   : ";
+	echo "            -c           : copy";
+	echo "            -R           : recursive (cannot use path in <files> with this option)";
+	echo "            -s           : sudo";
+	echo "            -v           : verbose (Perform simulation. Do not rename files)";
+	echo "";
+  echo "            -C <nb>      : add counter counting from nb"
+  echo "            -D <nbDigit> : digits for counter"
+	echo "";
+	echo -e "EXAMPLE   : filesrename 'path/*' '#P##F##E#'                         Keep the same path, filename and extension (nothing done)";
+	echo -e "EXAMPLE   : filesrename 'path/*' 'newpath/#F##E#'                    Move";
+	echo -e "EXAMPLE   : filesrename '*' '#F#.cfg'                                Change extension (aaa.txt --> aaa.cfg, bbb --> bbb.cfg)";
+	echo -e "EXAMPLE   : filesrename '*' 'my_#F#_backup#E#'                       Rename with prefix and postfix (aaa.txt --> my_aaa_backup.txt)";
+	echo -e "EXAMPLE   : filesrename -C 1 '*' 'file#E#'                           Rename using counter (aaa.txt --> file1.txt, bbb --> file2) [CAUTION : changing filename without using counter could lead to file loss]";
+	echo -e "EXAMPLE   : filesrename -C 10 -D 3 '*' 'file#E#'                     Rename using counter with digits (aaa.txt --> file010.txt, bbb --> file011)";
+	echo -e "EXAMPLE   : filesrename -R '*' '#P##F##E#.tmp'                       Rename recursively (path1/aaa.txt --> path1/aaa.txt.tmp, path2/bbb --> path2/bbb.tmp)";
+	echo -e "EXAMPLE   : filesrename -R '*' '#D#_#F##E#'                          Move recursively all files keeping track of their directory (??/dir1/aaa.txt --> dir1_aaa.txt, ??/??/??/dir2/bbb --> dir2_bbb)";
+	echo -e "EXAMPLE   : filesrename -c '*.txt' '#F#.cfg'                         Copy (orignal files preserved)";
+	echo -e "EXAMPLE   : filesrename -v '*.txt' '#F#.cfg'                         Simulate renaming (nothing changed)";
+	echo -e "EXAMPLE   : filesrename -s '*.txt' '#F#.cfg'                         Sudo renaming";
+  echo "";
+  echo "--------------------------------------------------";
+  exit;
+elif (( $# == 2 )); then
+
+  # Rename files
+  IFSOld=$IFS;
+  IFS=$'\n';
+  for f in $FILES; do
+    # Check is file
+    if [ -f "$f" ]; then
+      # Extract dir
+      OLDFILEDIR=$(echo "$f" | perl -pe "s/^(.*?)([^\.\/]*)([^\/]*)$/\1/g");
+      OLDFILENAME=$(echo "$f" | perl -pe "s/^(.*?)([^\.\/]*)([^\/]*)$/\2/g");
+      OLDFILEEXT=$(echo "$f" | perl -pe "s/^(.*?)([^\.\/]*)([^\/]*)$/\3/g");
+			OLDFILELASTDIR=$(echo "$OLDFILEDIR" | sed -re "s/(.+\/)*(.+)\//\2/g");
+
+			# Replace #D# by current dir and #F# by current filename and #E# by current extension
+			# NEWFILENAME=$(echo "$ORIGINALNEWFILENAME" | sed -re "s/#D#/$OLDFILELASTDIR/g" | sed -re "s/#F#/$OLDFILENAME/g" | sed -re "s/#E#/$OLDFILEEXT/g");
+			NEWFILEREPLACED=$(echo "$NEWFILE" | sed -re "s@#P#@$OLDFILEDIR@g"  | sed -re "s/#D#/$OLDFILELASTDIR/g" | sed -re "s/#F#/$OLDFILENAME/g" | sed -re "s/#E#/$OLDFILEEXT/g");
+
+			# Extract dir, filename, ext
+			NEWFILEDIR=$(echo "$NEWFILEREPLACED" | perl -pe "s/^(.*?)([^\.\/]*)([^\/]*)$/\1/g");
+			NEWFILENAME=$(echo "$NEWFILEREPLACED" | perl -pe "s/^(.*?)([^\.\/]*)([^\/]*)$/\2/g");
+			NEWFILEEXT=$(echo "$NEWFILEREPLACED" | perl -pe "s/^(.*?)([^\.\/]*)([^\/]*)$/\3/g");
+
+      # Display counter
+			COUNTERDISPLAY="";
+			if (( $COUNTER > 0 )); then
+				# Test digit display
+				if [[ $DArg != "" ]]; then
+					COUNTERDISPLAY=$(printf "%0${DArg}d" "$COUNTER");
+				else
+					COUNTERDISPLAY="$COUNTER";
+				fi
+
+				# Update counter
+				COUNTER=$(($COUNTER+1));
+			fi
+
+			# Destination
+			DEST="$NEWFILEDIR$NEWFILENAME$COUNTERDISPLAY$NEWFILEEXT";
+
+      # Test simulation vs real
+      if (( $vOpt == 1 )); then
+				# Test copy vs move
+				if (( $cOpt == 1 )); then
+        	echo -e "\t[INFO] Simulate copying $f          --->          $DEST";
+				else
+        	echo -e "\t[INFO] Simulate renaming $f          --->          $DEST";
+				fi
+      else
+				# Test source != destination
+				if [[ "$f" != "$DEST" ]]; then
+					# Test copy vs move
+					if (( $cOpt == 1 )); then
+						$SUDO cp --preserve=all "$f" "$DEST";
+					else
+						$SUDO mv "$f" "$DEST";
+					fi
+				fi
+      fi
+    fi
+  done
+  IFS=$IFSOld;
+else
+  echo -e "[WARN] Commands such as   > filesrename *.txt   must be replaced by   > filesrename '*.txt'"
+fi
+
+
+## TODO : -d : dirs instead of files
+## TODO : -p : preserve existant file/dir

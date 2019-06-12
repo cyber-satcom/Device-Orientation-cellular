@@ -1,0 +1,130 @@
+#!/bin/bash
+
+
+# OPTS
+dOpt=0;
+hOpt=0;
+pOpt=0;
+rOpt=0;
+sOpt=0;
+tOpt=0;
+ROpt=0;
+while getopts ':dhprstR' opt; do
+  case "$opt" in
+    d) dOpt=1 ;;
+    h) hOpt=1 ;;
+    p) pOpt=1 ;;
+    r) rOpt=1 ;;
+    s) sOpt=1 ;;
+    t) tOpt=1 ;;
+    R) ROpt=1 ;;
+    :) echo "Missing argument for option -$OPTARG" ;;
+    \?) echo "Unexpected option -$OPTARG" ;;
+  esac
+done
+shift $((OPTIND-1))
+
+# ARGS
+FILES=$1;
+
+# Hidden
+HIDDEN="";
+if (( $hOpt == 1 )); then
+	HIDDEN=".";
+fi
+
+# Timestamp
+TIMESTAMP="";
+if (( $tOpt == 1 )); then
+	TIMESTAMP="[$(date '+%F %X')]";
+fi
+
+# Recursive
+RECURSIVE="";
+SEARCHIN=$(ls $FILES | egrep -v "\.back$");
+if (( $ROpt == 1 )); then
+	RECURSIVE="-R";
+	SEARCHIN=$(find ./ -name "$FILES" | egrep -v "\.back$");
+fi
+
+# Sudo
+SUDO="";
+SUDO2="";
+if (( $sOpt == 1 )); then
+	SUDO="-s";
+	SUDO2="sudo";
+fi
+
+# Dir
+DIR="";
+if (( $dOpt == 1 )); then
+	DIR="-d";
+	SEARCHIN=$(echo $FILES | egrep -v "\.back$");
+fi
+
+
+# Check script args
+if (( $# == 0 && $rOpt == 0 )); then
+	# Msg
+	echo "--------------------------------------------------";
+	echo "";
+	echo "USAGE     : filesbackup <files>";
+	echo "NOTE      : work on visible non-backup files only.";
+	echo "NOTE      : existing backups are replaced.";
+	echo "OPTIONS   : ";
+	echo "            -h           : hide backup";
+	echo "            -t           : timestamp backup";
+	echo "";
+	echo "            -r           : remove all backup files";
+	echo "";
+	echo "            -R           : recursive";
+	echo "            -p           : preserve existant file/dir";
+	echo "            -s           : sudo";
+	echo "            -d           : dirs instead of files";
+	echo "";
+	echo "EXAMPLE   : filesbackup 'toto.txt'                                      Backup";
+	echo "EXAMPLE   : filesbackup '*.txt'                                         Backup .txt files";
+	echo "EXAMPLE   : filesbackup -p '*.txt'                                      Backup without overwriting previous existing backup files";
+	echo "EXAMPLE   : filesbackup -h 'toto.txt'                                   Hidden backup";
+	echo "EXAMPLE   : filesbackup -t toto.txt                                     Timestamped backup (preserve existing backups)";
+	echo "EXAMPLE   : filesbackup -R '*.txt'                                      Recursively backup .txt files";
+	echo "EXAMPLE   : filesbackup -s toto.txt                                     Sudo backup";
+	echo "EXAMPLE   : filesbackup -d /home/bob/dir                                Backup dir (do not put the last slash)";
+	echo "EXAMPLE   : filesbackup -r                                              Remove backups in current dir";
+	echo "EXAMPLE   : filesbackup -r -R                                           Recursively remove backups";
+	echo "EXAMPLE   : filesbackup -r -d                                           Remove backup dirs in current dir";
+	echo "";
+	echo "--------------------------------------------------";
+	exit;
+elif (( $# == 0 && $rOpt == 1 )); then
+	# Remove backup files
+	./filesdelete $RECURSIVE $DIR $SUDO '*.back';
+elif (( $# == 1 )); then
+  for f in $SEARCHIN; do
+		# File
+		FILEDIR=$(echo "$f" | perl -pe "s/^(.*?)([^\.\/]+)([^\/]*)$/\1/g");
+		FILENAME=$(echo "$f" | perl -pe "s/^(.*?)([^\.\/]+)([^\/]*)$/\2/g");
+		FILEEXT=$(echo "$f" | perl -pe "s/^(.*?)([^\.\/]+)([^\/]*)$/\3/g");
+
+		# Backup filename
+		BACKUPFILENAME="$FILEDIR$HIDDEN$FILENAME$FILEEXT$TIMESTAMP.back";
+
+		# Preserve file
+		if [ ! -e "$BACKUPFILENAME" ] || (( $pOpt == 0 )); then
+	    # Test file vs dir
+	    if [ -f "$f" ] && (( $dOpt == 0 )); then
+	      # Backup file
+				./filesrename -c $SUDO "$f" "$BACKUPFILENAME";
+			elif [ -d "$f" ] && (( $dOpt == 1 )); then
+	      # Backup dir
+				$SUDO2 cp -R "$f" "$BACKUPFILENAME";
+	    fi
+		fi
+  done
+else
+  echo -e "[WARN] Commands such as   > filesbackup *.txt   must be replaced by   > filesbackup '*.txt'"
+fi
+
+
+
+## TODO : -u : unbackup file
